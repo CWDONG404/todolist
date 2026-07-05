@@ -7,20 +7,46 @@ const {
   ipcMain,
   Menu,
   nativeImage,
+  screen,
   shell,
   Tray,
 } = require("electron");
 const { createTaskStore } = require("./storage.cjs");
 
 let mainWindow = null;
-let miniWindow = null;
 let tray = null;
 let taskStore = null;
+let isQuitting = false;
 
 const isDevServer = Boolean(process.env.VITE_DEV_SERVER_URL);
 
 app.setName("Todolist");
 app.setPath("userData", path.join(app.getPath("appData"), "Todolist"));
+
+function getLoginItemOptions() {
+  if (process.defaultApp && process.argv.length >= 2) {
+    return {
+      path: process.execPath,
+      args: [path.resolve(process.argv[1])],
+    };
+  }
+
+  return {};
+}
+
+function getAutoLaunchEnabled() {
+  return app.getLoginItemSettings(getLoginItemOptions()).openAtLogin;
+}
+
+function setAutoLaunchEnabled(enabled) {
+  app.setLoginItemSettings({
+    ...getLoginItemOptions(),
+    openAtLogin: Boolean(enabled),
+    openAsHidden: false,
+  });
+
+  return getAutoLaunchEnabled();
+}
 
 function createTrayIcon() {
   return nativeImage.createFromDataURL(
@@ -39,9 +65,17 @@ function getAppUrl(mode) {
   return indexUrl.toString();
 }
 
-function createWindow(mode = "main") {
-  const isMini = mode === "mini";
-  const existingWindow = isMini ? miniWindow : mainWindow;
+function placeWindowTopRight(window) {
+  const margin = 24;
+  const bounds = window.getBounds();
+  const display = screen.getDisplayNearestPoint(screen.getCursorScreenPoint());
+  const { x, y, width } = display.workArea;
+
+  window.setPosition(x + width - bounds.width - margin, y + margin, false);
+}
+
+function createWindow(mode = "widget") {
+  const existingWindow = mainWindow;
 
   if (existingWindow && !existingWindow.isDestroyed()) {
     existingWindow.show();
@@ -50,13 +84,20 @@ function createWindow(mode = "main") {
   }
 
   const window = new BrowserWindow({
-    width: isMini ? 390 : 1280,
-    height: isMini ? 590 : 820,
-    minWidth: isMini ? 340 : 980,
-    minHeight: isMini ? 480 : 640,
-    title: isMini ? "Todolist 挂件" : "Todolist",
-    alwaysOnTop: isMini,
+    width: 390,
+    height: 560,
+    minWidth: 330,
+    minHeight: 420,
+    title: "Todolist",
+    frame: false,
+    transparent: true,
+    backgroundColor: "#00000000",
+    hasShadow: false,
+    resizable: true,
+    alwaysOnTop: true,
+    skipTaskbar: true,
     autoHideMenuBar: true,
+    show: false,
     webPreferences: {
       preload: path.join(__dirname, "preload.cjs"),
       contextIsolation: true,
@@ -67,20 +108,25 @@ function createWindow(mode = "main") {
 
   window.loadURL(getAppUrl(mode));
 
-  window.on("closed", () => {
-    if (isMini) {
-      miniWindow = null;
+  window.once("ready-to-show", () => {
+    placeWindowTopRight(window);
+    window.show();
+  });
+
+  window.on("close", (event) => {
+    if (isQuitting) {
       return;
     }
 
+    event.preventDefault();
+    window.hide();
+  });
+
+  window.on("closed", () => {
     mainWindow = null;
   });
 
-  if (isMini) {
-    miniWindow = window;
-  } else {
-    mainWindow = window;
-  }
+  mainWindow = window;
 
   return window;
 }
@@ -109,21 +155,20 @@ function setupTray() {
   tray.setContextMenu(
     Menu.buildFromTemplate([
       {
-        label: "打开主窗口",
-        click: () => createWindow("main"),
-      },
-      {
-        label: "打开迷你挂件",
-        click: () => createWindow("mini"),
+        label: "显示待办挂件",
+        click: () => createWindow("widget"),
       },
       { type: "separator" },
       {
         label: "退出",
-        click: () => app.quit(),
+        click: () => {
+          isQuitting = true;
+          app.quit();
+        },
       },
     ]),
   );
-  tray.on("double-click", () => createWindow("main"));
+  tray.on("double-click", () => createWindow("widget"));
 }
 
 function setupIpc() {
@@ -185,8 +230,14 @@ function setupIpc() {
     shell.showItemInFolder(taskStore.dataPath);
   });
 
-  ipcMain.handle("window:open-main", () => createWindow("main"));
-  ipcMain.handle("window:open-mini", () => createWindow("mini"));
+  ipcMain.handle("window:open-main", () => createWindow("widget"));
+  ipcMain.handle("window:open-mini", () => createWindow("widget"));
+  ipcMain.handle("window:minimize", (event) => {
+    BrowserWindow.fromWebContents(event.sender)?.minimize();
+  });
+  ipcMain.handle("window:hide", (event) => {
+    BrowserWindow.fromWebContents(event.sender)?.hide();
+  });
   ipcMain.handle("window:set-mini-always-on-top", (event, enabled) => {
     const window = BrowserWindow.fromWebContents(event.sender);
 
@@ -194,19 +245,25 @@ function setupIpc() {
       window.setAlwaysOnTop(Boolean(enabled));
     }
   });
+  ipcMain.handle("app:get-auto-launch", () => getAutoLaunchEnabled());
+  ipcMain.handle("app:set-auto-launch", (_event, enabled) => setAutoLaunchEnabled(enabled));
 }
 
 app.whenReady().then(() => {
   taskStore = createTaskStore(app.getPath("userData"));
   setupIpc();
   setupTray();
-  createWindow("main");
+  createWindow("widget");
 
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) {
-      createWindow("main");
+      createWindow("widget");
     }
   });
+});
+
+app.on("before-quit", () => {
+  isQuitting = true;
 });
 
 app.on("window-all-closed", () => {

@@ -1,24 +1,21 @@
 import {
-  Archive,
+  ArchiveRestore,
   CalendarDays,
-  Check,
   CheckCircle2,
   ChevronDown,
   Circle,
-  Database,
-  Download,
   Clock3,
-  Edit3,
-  Flag,
+  Download,
   FolderOpen,
-  Goal,
-  History as HistoryIcon,
-  LayoutGrid,
-  ListTodo,
+  GripHorizontal,
+  Minus,
+  MoreHorizontal,
+  Pin,
+  PinOff,
   Plus,
-  Search,
+  Power,
+  SlidersHorizontal,
   Trash2,
-  Undo2,
   Upload,
   X,
 } from "lucide-react";
@@ -53,11 +50,6 @@ type TaskDraft = {
   dueDate: string;
   priority: TaskPriority;
 };
-
-type ConfirmDelete = {
-  id: string;
-  title: string;
-} | null;
 
 type TaskStorageData = {
   version: 1;
@@ -105,7 +97,12 @@ type DesktopBridge = {
     openStorageFolder: () => Promise<void>;
     onChanged: (callback: (data: TaskStorageData) => void) => () => void;
   };
-  openMiniWindow: () => Promise<void>;
+  minimizeWindow?: () => Promise<void>;
+  hideWindow?: () => Promise<void>;
+  openMiniWindow?: () => Promise<void>;
+  setMiniAlwaysOnTop?: (enabled: boolean) => Promise<void>;
+  getAutoLaunch?: () => Promise<boolean>;
+  setAutoLaunch?: (enabled: boolean) => Promise<boolean>;
 };
 
 declare global {
@@ -120,27 +117,23 @@ const COMPLETION_DELAY_MS = 5000;
 
 const categories: Array<{
   id: TaskCategory;
-  title: string;
-  subtitle: string;
-  icon: typeof CalendarDays;
+  label: string;
+  shortLabel: string;
 }> = [
   {
     id: "today",
-    title: "今日待办",
-    subtitle: "只看今天需要推进的计划",
-    icon: CalendarDays,
+    label: "今日待办",
+    shortLabel: "今日",
   },
   {
     id: "week",
-    title: "本周计划",
-    subtitle: "安排这一周要完成的任务",
-    icon: LayoutGrid,
+    label: "本周计划",
+    shortLabel: "本周",
   },
   {
     id: "future",
-    title: "未来目标",
-    subtitle: "沉淀长期方向和后续目标",
-    icon: Goal,
+    label: "未来目标",
+    shortLabel: "未来",
   },
 ];
 
@@ -148,12 +141,6 @@ const priorityLabels: Record<TaskPriority, string> = {
   low: "低",
   medium: "中",
   high: "高",
-};
-
-const priorityTone: Record<TaskPriority, string> = {
-  low: "priority-low",
-  medium: "priority-medium",
-  high: "priority-high",
 };
 
 const emptyDraft: TaskDraft = {
@@ -315,17 +302,15 @@ function formatDate(value: string) {
   return new Intl.DateTimeFormat("zh-CN", {
     month: "short",
     day: "numeric",
-    weekday: "short",
   }).format(new Date(`${value}T00:00:00`));
 }
 
-function formatDateTime(value: string) {
+function formatToday() {
   return new Intl.DateTimeFormat("zh-CN", {
-    month: "short",
+    month: "long",
     day: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  }).format(new Date(value));
+    weekday: "short",
+  }).format(new Date());
 }
 
 function sortTasks(tasks: Task[]) {
@@ -351,9 +336,6 @@ function sortTasks(tasks: Task[]) {
 export default function App() {
   const desktopApi = typeof window !== "undefined" ? window.desktop : undefined;
   const isDesktop = Boolean(desktopApi);
-  const isMiniMode =
-    typeof window !== "undefined" &&
-    new URLSearchParams(window.location.search).get("mode") === "mini";
   const [tasks, setTasks] = useState<Task[]>(loadLocalTasks);
   const [history, setHistory] = useState<CompletedTask[]>(loadLocalHistory);
   const tasksRef = useRef<Task[]>(tasks);
@@ -361,12 +343,13 @@ export default function App() {
   const [isStorageReady, setIsStorageReady] = useState(!isDesktop);
   const [storageNotice, setStorageNotice] = useState("");
   const [selectedCategory, setSelectedCategory] = useState<TaskCategory>("today");
-  const [isCategoryMenuOpen, setIsCategoryMenuOpen] = useState(false);
+  const [quickTitle, setQuickTitle] = useState("");
   const [draft, setDraft] = useState<TaskDraft>(emptyDraft);
   const [editingTask, setEditingTask] = useState<Task | null>(null);
   const [isEditorOpen, setIsEditorOpen] = useState(false);
-  const [confirmDelete, setConfirmDelete] = useState<ConfirmDelete>(null);
-  const [searchTerm, setSearchTerm] = useState("");
+  const [isPanelOpen, setIsPanelOpen] = useState(false);
+  const [isPinned, setIsPinned] = useState(true);
+  const [isAutoLaunchEnabled, setIsAutoLaunchEnabled] = useState(false);
 
   useEffect(() => {
     tasksRef.current = tasks;
@@ -395,9 +378,9 @@ export default function App() {
         setIsStorageReady(true);
 
         if (result.status?.recovered) {
-          setStorageNotice(`数据文件损坏，已恢复默认数据，原文件已备份。`);
+          setStorageNotice("数据文件损坏，已恢复默认数据，原文件已备份。");
         } else if (result.status?.created && result.status?.migrated) {
-          setStorageNotice("已把浏览器本地数据迁移到桌面数据文件。");
+          setStorageNotice("已迁移浏览器本地数据。");
         } else if (result.status?.created) {
           setStorageNotice("已创建桌面数据文件。");
         }
@@ -422,6 +405,19 @@ export default function App() {
       isActive = false;
       removeListener();
     };
+  }, [desktopApi]);
+
+  useEffect(() => {
+    if (!desktopApi?.getAutoLaunch) {
+      return;
+    }
+
+    desktopApi
+      .getAutoLaunch()
+      .then(setIsAutoLaunchEnabled)
+      .catch((error: unknown) => {
+        setStorageNotice(error instanceof Error ? error.message : "无法读取开机自启动状态。");
+      });
   }, [desktopApi]);
 
   useEffect(() => {
@@ -463,40 +459,15 @@ export default function App() {
 
   const selectedCategoryConfig =
     categories.find((category) => category.id === selectedCategory) ?? categories[0];
-  const SelectedIcon = selectedCategoryConfig.icon;
-
-  const selectedTasks = useMemo(() => {
-    const query = searchTerm.trim().toLowerCase();
-    const categoryTasks = tasks.filter((task) => task.category === selectedCategory);
-
-    if (!query) {
-      return sortTasks(categoryTasks);
-    }
-
-    return sortTasks(
-      categoryTasks.filter((task) =>
-        `${task.title} ${task.description}`.toLowerCase().includes(query),
-      ),
-    );
-  }, [searchTerm, selectedCategory, tasks]);
-
-  const selectedHistory = useMemo(
-    () => history.filter((item) => item.category === selectedCategory),
-    [history, selectedCategory],
-  );
-  const selectedPendingHistory = useMemo(
-    () => sortTasks(tasks.filter((task) => task.category === selectedCategory && task.completed)),
+  const selectedTasks = useMemo(
+    () => sortTasks(tasks.filter((task) => task.category === selectedCategory)),
     [selectedCategory, tasks],
   );
-
-  const totalCount = tasks.length;
+  const activeSelectedTasks = selectedTasks.filter((task) => !task.completed);
+  const pendingSelectedTasks = selectedTasks.filter((task) => task.completed);
   const activeCount = tasks.filter((task) => !task.completed).length;
-  const totalPendingArchiveCount = tasks.filter((task) => task.completed).length;
-  const selectedCount = tasks.filter((task) => task.category === selectedCategory).length;
-  const selectedPendingArchiveCount = tasks.filter(
-    (task) => task.category === selectedCategory && task.completed,
-  ).length;
-  const visibleHistoryCount = selectedHistory.length + selectedPendingHistory.length;
+  const completedCount = history.length + tasks.filter((task) => task.completed).length;
+  const recentHistory = history.slice(0, 4);
 
   function archiveCompletedTask(id: string) {
     const task = tasksRef.current.find((item) => item.id === id && item.completed);
@@ -513,9 +484,9 @@ export default function App() {
       archivedAt: now,
     };
 
-    setTasks((currentTasks) => {
-      return currentTasks.filter((item) => !(item.id === id && item.completed));
-    });
+    setTasks((currentTasks) =>
+      currentTasks.filter((item) => !(item.id === id && item.completed)),
+    );
     setHistory((currentHistory) =>
       currentHistory.some(
         (item) => item.id === archivedTask.id && item.completedAt === archivedTask.completedAt,
@@ -525,11 +496,69 @@ export default function App() {
     );
   }
 
-  function openCreateEditor(category: TaskCategory = selectedCategory) {
+  function createTaskFromTitle(title: string) {
+    const trimmedTitle = title.trim();
+
+    if (!trimmedTitle) {
+      return;
+    }
+
+    const now = new Date().toISOString();
+    const newTask: Task = {
+      id: createId(),
+      title: trimmedTitle,
+      description: "",
+      category: selectedCategory,
+      dueDate: selectedCategory === "today" ? now.slice(0, 10) : "",
+      priority: "medium",
+      completed: false,
+      createdAt: now,
+      updatedAt: now,
+    };
+
+    setTasks((currentTasks) => [newTask, ...currentTasks]);
+    setQuickTitle("");
+  }
+
+  function handleQuickSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    createTaskFromTitle(quickTitle);
+  }
+
+  function toggleTask(id: string) {
+    const now = new Date().toISOString();
+
+    setTasks((currentTasks) =>
+      currentTasks.map((task) => {
+        if (task.id !== id) {
+          return task;
+        }
+
+        if (task.completed) {
+          return {
+            ...task,
+            completed: false,
+            completedAt: undefined,
+            updatedAt: now,
+          };
+        }
+
+        return {
+          ...task,
+          completed: true,
+          completedAt: now,
+          updatedAt: now,
+        };
+      }),
+    );
+  }
+
+  function openCreateEditor() {
     setEditingTask(null);
     setDraft({
       ...emptyDraft,
-      category,
+      category: selectedCategory,
+      dueDate: selectedCategory === "today" ? new Date().toISOString().slice(0, 10) : "",
     });
     setIsEditorOpen(true);
   }
@@ -552,7 +581,7 @@ export default function App() {
     setDraft(emptyDraft);
   }
 
-  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+  function handleEditorSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
     const title = draft.title.trim();
@@ -601,41 +630,9 @@ export default function App() {
     closeEditor();
   }
 
-  function toggleTask(id: string) {
-    const now = new Date().toISOString();
-
-    setTasks((currentTasks) =>
-      currentTasks.map((task) => {
-        if (task.id !== id) {
-          return task;
-        }
-
-        if (task.completed) {
-          return {
-            ...task,
-            completed: false,
-            completedAt: undefined,
-            updatedAt: now,
-          };
-        }
-
-        return {
-          ...task,
-          completed: true,
-          completedAt: now,
-          updatedAt: now,
-        };
-      }),
-    );
-  }
-
   function deleteTask(id: string) {
     setTasks((currentTasks) => currentTasks.filter((task) => task.id !== id));
-    setConfirmDelete(null);
-
-    if (editingTask?.id === id) {
-      closeEditor();
-    }
+    closeEditor();
   }
 
   function restoreHistoryItem(item: CompletedTask) {
@@ -654,11 +651,14 @@ export default function App() {
     setSelectedCategory(item.category);
   }
 
-  async function openStorageFolder() {
+  async function togglePinned() {
+    const nextPinned = !isPinned;
+    setIsPinned(nextPinned);
+
     try {
-      await desktopApi?.tasks.openStorageFolder();
+      await desktopApi?.setMiniAlwaysOnTop?.(nextPinned);
     } catch (error) {
-      setStorageNotice(error instanceof Error ? error.message : "无法打开数据文件夹。");
+      setStorageNotice(error instanceof Error ? error.message : "无法切换置顶。");
     }
   }
 
@@ -667,7 +667,7 @@ export default function App() {
       const result = await desktopApi?.tasks.export();
 
       if (result && !result.canceled) {
-        setStorageNotice("数据已导出为 JSON 备份。");
+        setStorageNotice("已导出 JSON 备份。");
       }
     } catch (error) {
       setStorageNotice(error instanceof Error ? error.message : "数据导出失败。");
@@ -682,349 +682,255 @@ export default function App() {
         skipNextSaveRef.current = true;
         setTasks(result.data.tasks);
         setHistory(result.data.history);
-        setStorageNotice("数据已从 JSON 备份导入。");
+        setStorageNotice("已导入 JSON 备份。");
       }
     } catch (error) {
       setStorageNotice(error instanceof Error ? error.message : "数据导入失败。");
     }
   }
 
-  async function openMiniWindow() {
+  async function toggleAutoLaunch() {
+    const nextEnabled = !isAutoLaunchEnabled;
+    setIsAutoLaunchEnabled(nextEnabled);
+
     try {
-      await desktopApi?.openMiniWindow();
+      const actualEnabled = await desktopApi?.setAutoLaunch?.(nextEnabled);
+      setIsAutoLaunchEnabled(Boolean(actualEnabled));
+      setStorageNotice(actualEnabled ? "已开启开机自启动。" : "已关闭开机自启动。");
     } catch (error) {
-      setStorageNotice(error instanceof Error ? error.message : "无法打开迷你挂件。");
+      setIsAutoLaunchEnabled(!nextEnabled);
+      setStorageNotice(error instanceof Error ? error.message : "无法修改开机自启动。");
     }
   }
 
   return (
-    <main className={`app-shell ${isMiniMode ? "is-mini-mode" : ""}`}>
-      <section className="todo-frame" aria-label="计划任务工作区">
-        <aside className="control-panel" aria-label="计划控制栏">
-          <div className="summary-strip" aria-label="任务统计">
-            <div>
-              <span>{totalCount}</span>
-              <small>当前任务</small>
-            </div>
-            <div>
-              <span>{activeCount}</span>
-              <small>待处理</small>
-            </div>
-            <div>
-              <span>{history.length + totalPendingArchiveCount}</span>
-              <small>完成历史</small>
-            </div>
+    <main className="widget-stage">
+      <section className="glass-widget" aria-label="透明待办挂件">
+        <header className="widget-chrome">
+          <div className="drag-zone" aria-hidden="true">
+            <GripHorizontal size={20} />
           </div>
-
-          <div className="control-divider" />
-
-          <div className="control-section">
-            <div className="category-picker">
-              <label htmlFor="category-filter">计划列表</label>
-              <div className="category-menu-wrap">
-                <button
-                  className={`category-select ${isCategoryMenuOpen ? "is-open" : ""}`}
-                  id="category-filter"
-                  type="button"
-                  aria-haspopup="listbox"
-                  aria-expanded={isCategoryMenuOpen}
-                  onClick={() => setIsCategoryMenuOpen((isOpen) => !isOpen)}
-                >
-                  <span className="lane-icon">
-                    <SelectedIcon aria-hidden="true" size={20} />
-                  </span>
-                  <span className="category-select-label">{selectedCategoryConfig.title}</span>
-                  <ChevronDown aria-hidden="true" size={18} />
-                </button>
-
-                {isCategoryMenuOpen ? (
-                  <div className="category-menu" role="listbox" aria-labelledby="category-filter">
-                    {categories.map((category) => {
-                      const Icon = category.icon;
-
-                      return (
-                        <button
-                          className={`category-option ${
-                            category.id === selectedCategory ? "is-selected" : ""
-                          }`}
-                          key={category.id}
-                          type="button"
-                          role="option"
-                          aria-selected={category.id === selectedCategory}
-                          onClick={() => {
-                            setSelectedCategory(category.id);
-                            setSearchTerm("");
-                            setIsCategoryMenuOpen(false);
-                          }}
-                        >
-                          <span>
-                            <Icon aria-hidden="true" size={18} />
-                          </span>
-                          <strong>{category.title}</strong>
-                          {category.id === selectedCategory ? (
-                            <CheckCircle2 aria-hidden="true" size={18} />
-                          ) : null}
-                        </button>
-                      );
-                    })}
-                  </div>
-                ) : null}
-              </div>
-              <p>{selectedCategoryConfig.subtitle}</p>
-            </div>
+          <div className="window-actions">
+            <button
+              className="chrome-button"
+              type="button"
+              aria-label={isPinned ? "取消置顶" : "窗口置顶"}
+              title={isPinned ? "取消置顶" : "窗口置顶"}
+              onClick={togglePinned}
+            >
+              {isPinned ? <Pin size={14} /> : <PinOff size={14} />}
+            </button>
+            <button
+              className="chrome-button"
+              type="button"
+              aria-label="最小化"
+              title="最小化"
+              onClick={() => desktopApi?.minimizeWindow?.()}
+            >
+              <Minus size={15} />
+            </button>
+            <button
+              className="chrome-button"
+              type="button"
+              aria-label="隐藏到托盘"
+              title="隐藏到托盘"
+              onClick={() => desktopApi?.hideWindow?.()}
+            >
+              <X size={15} />
+            </button>
           </div>
+        </header>
 
+        <div className="hero-strip">
+          <div>
+            <p>{formatToday()}</p>
+            <h1>{selectedCategoryConfig.label}</h1>
+          </div>
           <button
-            className="primary-button control-add-button"
+            className="round-button prominent"
             type="button"
-            onClick={() => openCreateEditor(selectedCategory)}
+            aria-label="新建详细任务"
+            title="新建详细任务"
+            onClick={openCreateEditor}
           >
-            <Plus aria-hidden="true" size={18} />
-            新增任务
+            <Plus size={20} />
           </button>
+        </div>
 
-          {isDesktop ? (
-            <div className="data-panel" aria-label="桌面数据管理">
-              <div className="data-panel-title">
-                <Database aria-hidden="true" size={16} />
-                <span>数据管理</span>
-              </div>
-              <div className="data-actions">
-                <button type="button" onClick={openMiniWindow}>
-                  <LayoutGrid aria-hidden="true" size={15} />
-                  迷你挂件
-                </button>
-                <button type="button" onClick={openStorageFolder}>
-                  <FolderOpen aria-hidden="true" size={15} />
-                  数据目录
-                </button>
-                <button type="button" onClick={exportData}>
-                  <Download aria-hidden="true" size={15} />
-                  导出
-                </button>
-                <button type="button" onClick={importData}>
-                  <Upload aria-hidden="true" size={15} />
-                  导入
-                </button>
-              </div>
-              {storageNotice ? <p className="storage-notice">{storageNotice}</p> : null}
-            </div>
-          ) : null}
-        </aside>
+        <div className="metric-row" aria-label="任务概览">
+          <span>{activeCount} 待处理</span>
+          <span>{completedCount} 已完成</span>
+        </div>
 
-        <section className="planner-panel">
-          <header className="planner-header">
-            <div className="planner-title-block">
-              <span className="lane-icon">
-                <SelectedIcon aria-hidden="true" size={22} />
-              </span>
-              <div>
-                <h1>{selectedCategoryConfig.title}</h1>
-                <p>{selectedCategoryConfig.subtitle}</p>
-              </div>
-            </div>
-          </header>
+        <div className="category-tabs" aria-label="分类">
+          {categories.map((category) => (
+            <button
+              className={category.id === selectedCategory ? "is-selected" : ""}
+              key={category.id}
+              type="button"
+              onClick={() => setSelectedCategory(category.id)}
+            >
+              {category.shortLabel}
+            </button>
+          ))}
+        </div>
 
-          <div className="planner-tools">
-            <label className="search-box">
-              <Search aria-hidden="true" size={18} />
-              <input
-                value={searchTerm}
-                onChange={(event) => setSearchTerm(event.target.value)}
-                placeholder={`搜索${selectedCategoryConfig.title}`}
-                type="search"
-              />
-            </label>
+        <form className="quick-add" onSubmit={handleQuickSubmit}>
+          <input
+            value={quickTitle}
+            onChange={(event) => setQuickTitle(event.target.value)}
+            placeholder="添加一个待办"
+            maxLength={80}
+          />
+          <button type="submit" aria-label="添加">
+            <Plus size={18} />
+          </button>
+        </form>
 
-            <div className="lane-meta" aria-label="当前列表统计">
-              <span>{selectedCount} 项</span>
-              <span>{selectedPendingArchiveCount} 等待归档</span>
-            </div>
-          </div>
-
-          <div className="task-list">
-            {selectedTasks.length > 0 ? (
-              selectedTasks.map((task) => (
-                <article
-                  className={`task-card ${task.completed ? "is-complete is-pending-archive" : ""}`}
-                  key={task.id}
-                  data-testid={`task-card-${task.id}`}
-                  data-task-title={task.title}
+        <div className="task-scroll">
+          {activeSelectedTasks.length > 0 ? (
+            activeSelectedTasks.map((task) => (
+              <article className={`task-row priority-${task.priority}`} key={task.id}>
+                <button
+                  className="task-check"
+                  type="button"
+                  aria-label="标记完成"
+                  title="标记完成"
+                  onClick={() => toggleTask(task.id)}
                 >
-                  <div className="task-topline">
-                    <button
-                      className="check-button"
-                      type="button"
-                      data-testid={`toggle-task-${task.id}`}
-                      aria-label={task.completed ? "取消完成" : "标记为完成"}
-                      title={task.completed ? "取消完成" : "标记为完成"}
-                      onClick={() => toggleTask(task.id)}
-                    >
-                      {task.completed ? (
-                        <CheckCircle2 aria-hidden="true" size={22} />
-                      ) : (
-                        <Circle aria-hidden="true" size={22} />
-                      )}
-                    </button>
-                    <div className="task-content">
-                      <h3>{task.title}</h3>
-                      {task.description ? <p>{task.description}</p> : null}
-                    </div>
-                  </div>
-
-                  <div className="task-footer">
-                    <span className={`priority-pill ${priorityTone[task.priority]}`}>
-                      <Flag aria-hidden="true" size={13} />
-                      {priorityLabels[task.priority]}
-                    </span>
-                    <span className="date-pill">
-                      <Clock3 aria-hidden="true" size={13} />
-                      {formatDate(task.dueDate)}
-                    </span>
-                    {task.completed ? (
-                      <span className="archive-pill">
-                        <Undo2 aria-hidden="true" size={13} />
-                        5 秒内可取消
-                      </span>
-                    ) : null}
-                    <div className="task-actions">
-                      <button
-                        className="ghost-icon-button"
-                        type="button"
-                        data-testid={`edit-task-${task.id}`}
-                        aria-label="编辑任务"
-                        title="编辑任务"
-                        onClick={() => openEditEditor(task)}
-                      >
-                        <Edit3 aria-hidden="true" size={16} />
-                      </button>
-                      <button
-                        className="ghost-icon-button danger"
-                        type="button"
-                        data-testid={`delete-task-${task.id}`}
-                        aria-label="删除任务"
-                        title="删除任务"
-                        onClick={() =>
-                          setConfirmDelete({
-                            id: task.id,
-                            title: task.title,
-                          })
-                        }
-                      >
-                        <Trash2 aria-hidden="true" size={16} />
-                      </button>
-                    </div>
-                  </div>
-                </article>
-              ))
-            ) : (
-              <div className="empty-state">
-                <Check aria-hidden="true" size={22} />
-                <p>{searchTerm ? "没有匹配的任务" : `${selectedCategoryConfig.title}还没有任务`}</p>
-                <button type="button" onClick={() => openCreateEditor(selectedCategory)}>
-                  添加一项
+                  <Circle size={22} />
                 </button>
-              </div>
-            )}
-          </div>
-        </section>
-
-        {!isMiniMode ? (
-        <aside className="history-panel" aria-label="完成历史">
-          <header className="history-header">
-            <div>
-              <span className="history-icon">
-                <Archive aria-hidden="true" size={20} />
-              </span>
-            <div>
-              <h2>完成历史</h2>
-              <p>{selectedCategoryConfig.title}完成后会保存在这里</p>
+                <button className="task-main" type="button" onClick={() => openEditEditor(task)}>
+                  <strong>{task.title}</strong>
+                  <span>
+                    {priorityLabels[task.priority]}
+                    {task.dueDate ? ` · ${formatDate(task.dueDate)}` : ""}
+                  </span>
+                </button>
+                <button
+                  className="row-action"
+                  type="button"
+                  aria-label="编辑"
+                  title="编辑"
+                  onClick={() => openEditEditor(task)}
+                >
+                  <MoreHorizontal size={18} />
+                </button>
+              </article>
+            ))
+          ) : (
+            <div className="empty-widget">
+              <CheckCircle2 size={28} />
+              <p>{selectedCategoryConfig.shortLabel}清空了</p>
             </div>
-          </div>
-            <span className="history-count">{visibleHistoryCount}</span>
-          </header>
+          )}
 
-          <div className="history-list">
-            {visibleHistoryCount > 0 ? (
-              <>
-                {selectedPendingHistory.map((item) => (
-                  <article className="history-item is-pending-history" key={`pending-${item.id}`}>
-                    <div>
-                      <h3>{item.title}</h3>
-                      <p>
-                        <Clock3 aria-hidden="true" size={13} />
-                        5 秒后归档
-                      </p>
-                    </div>
-                    <button
-                      className="ghost-icon-button"
-                      type="button"
-                      aria-label="取消完成"
-                      title="取消完成"
-                      onClick={() => toggleTask(item.id)}
-                    >
-                      <Undo2 aria-hidden="true" size={16} />
-                    </button>
-                  </article>
-                ))}
-
-                {selectedHistory.map((item) => (
-                  <article className="history-item" key={`${item.id}-${item.archivedAt}`}>
-                    <div>
-                      <h3>{item.title}</h3>
-                      <p>
-                        <HistoryIcon aria-hidden="true" size={13} />
-                        {formatDateTime(item.archivedAt)}
-                      </p>
-                    </div>
-                    <button
-                      className="ghost-icon-button"
-                      type="button"
-                      aria-label="恢复到计划"
-                      title="恢复到计划"
-                      onClick={() => restoreHistoryItem(item)}
-                    >
-                      <Undo2 aria-hidden="true" size={16} />
-                    </button>
-                  </article>
-                ))}
-              </>
-            ) : (
-              <div className="history-empty">
-                <ListTodo aria-hidden="true" size={22} />
-                <p>完成的计划会在这里留档。</p>
+          {pendingSelectedTasks.map((task) => (
+            <article className="task-row is-pending" key={task.id}>
+              <button
+                className="task-check"
+                type="button"
+                aria-label="取消完成"
+                title="取消完成"
+                onClick={() => toggleTask(task.id)}
+              >
+                <CheckCircle2 size={22} />
+              </button>
+              <div className="task-main is-static">
+                <strong>{task.title}</strong>
+                <span>5 秒后归档</span>
               </div>
-            )}
-          </div>
-        </aside>
+            </article>
+          ))}
+        </div>
+
+        <footer className="widget-footer">
+          <button
+            className="footer-button"
+            type="button"
+            onClick={() => setIsPanelOpen((isOpen) => !isOpen)}
+          >
+            <SlidersHorizontal size={16} />
+            管理
+          </button>
+          {storageNotice ? <span className="notice-line">{storageNotice}</span> : null}
+        </footer>
+
+        {isPanelOpen ? (
+          <section className="drawer-panel" aria-label="数据与历史">
+            <div className="drawer-actions">
+              <button
+                className={isAutoLaunchEnabled ? "is-enabled" : ""}
+                type="button"
+                onClick={toggleAutoLaunch}
+              >
+                <Power size={16} />
+                {isAutoLaunchEnabled ? "自启已开" : "开机自启"}
+              </button>
+              <button type="button" onClick={() => desktopApi?.tasks.openStorageFolder()}>
+                <FolderOpen size={16} />
+                数据目录
+              </button>
+              <button type="button" onClick={exportData}>
+                <Download size={16} />
+                导出
+              </button>
+              <button type="button" onClick={importData}>
+                <Upload size={16} />
+                导入
+              </button>
+            </div>
+
+            <div className="history-compact">
+              <div className="history-title">
+                <ArchiveRestore size={16} />
+                最近完成
+              </div>
+              {recentHistory.length > 0 ? (
+                recentHistory.map((item) => (
+                  <button
+                    className="restore-item"
+                    key={`${item.id}-${item.archivedAt}`}
+                    type="button"
+                    onClick={() => restoreHistoryItem(item)}
+                  >
+                    <span>{item.title}</span>
+                    <ArchiveRestore size={14} />
+                  </button>
+                ))
+              ) : (
+                <p className="history-empty-text">还没有归档任务。</p>
+              )}
+            </div>
+          </section>
         ) : null}
       </section>
 
       {isEditorOpen ? (
         <div className="modal-backdrop" role="presentation">
           <section
-            className="editor-modal"
+            className="editor-sheet"
             role="dialog"
             aria-modal="true"
             aria-labelledby="editor-title"
           >
-            <header className="modal-header">
+            <header className="sheet-header">
               <div>
-                <p>{editingTask ? "编辑任务" : "创建任务"}</p>
-                <h2 id="editor-title">{editingTask ? "调整任务细节" : "添加新的待办"}</h2>
+                <p>{editingTask ? "编辑待办" : "新建待办"}</p>
+                <h2 id="editor-title">{editingTask ? "调整细节" : "添加到挂件"}</h2>
               </div>
               <button
-                className="icon-button"
+                className="round-button"
                 type="button"
-                aria-label="关闭编辑器"
-                title="关闭编辑器"
+                aria-label="关闭"
+                title="关闭"
                 onClick={closeEditor}
               >
-                <X aria-hidden="true" size={18} />
+                <X size={16} />
               </button>
             </header>
 
-            <form className="task-form" onSubmit={handleSubmit}>
+            <form className="task-form" onSubmit={handleEditorSubmit}>
               <label htmlFor="task-title">
                 <span>标题</span>
                 <input
@@ -1038,13 +944,13 @@ export default function App() {
                       title: event.target.value,
                     }))
                   }
-                  placeholder="例如：完成产品原型"
+                  placeholder="例如：处理今天最重要的一件事"
                   required
                 />
               </label>
 
               <label htmlFor="task-description">
-                <span>描述</span>
+                <span>备注</span>
                 <textarea
                   id="task-description"
                   value={draft.description}
@@ -1055,61 +961,53 @@ export default function App() {
                       description: event.target.value,
                     }))
                   }
-                  placeholder="补充上下文、下一步动作或验收标准"
-                  rows={4}
+                  placeholder="补充上下文"
+                  rows={3}
                 />
               </label>
 
               <div className="form-grid">
                 <label htmlFor="task-category">
-                  <span>目标分类</span>
-                  <div className="field-control select-control">
-                    <LayoutGrid aria-hidden="true" size={18} />
-                    <select
-                      id="task-category"
-                      value={draft.category}
-                      onChange={(event) =>
-                        setDraft((currentDraft) => ({
-                          ...currentDraft,
-                          category: event.target.value as TaskCategory,
-                        }))
-                      }
-                    >
-                      <option value="today">今日待办</option>
-                      <option value="week">本周计划</option>
-                      <option value="future">未来目标</option>
-                    </select>
-                    <ChevronDown aria-hidden="true" size={17} />
-                  </div>
+                  <span>分类</span>
+                  <select
+                    id="task-category"
+                    value={draft.category}
+                    onChange={(event) =>
+                      setDraft((currentDraft) => ({
+                        ...currentDraft,
+                        category: event.target.value as TaskCategory,
+                      }))
+                    }
+                  >
+                    <option value="today">今日待办</option>
+                    <option value="week">本周计划</option>
+                    <option value="future">未来目标</option>
+                  </select>
                 </label>
 
                 <label htmlFor="task-priority">
                   <span>优先级</span>
-                  <div className="field-control select-control">
-                    <Flag aria-hidden="true" size={18} />
-                    <select
-                      id="task-priority"
-                      value={draft.priority}
-                      onChange={(event) =>
-                        setDraft((currentDraft) => ({
-                          ...currentDraft,
-                          priority: event.target.value as TaskPriority,
-                        }))
-                      }
-                    >
-                      <option value="low">低</option>
-                      <option value="medium">中</option>
-                      <option value="high">高</option>
-                    </select>
-                    <ChevronDown aria-hidden="true" size={17} />
-                  </div>
+                  <select
+                    id="task-priority"
+                    value={draft.priority}
+                    onChange={(event) =>
+                      setDraft((currentDraft) => ({
+                        ...currentDraft,
+                        priority: event.target.value as TaskPriority,
+                      }))
+                    }
+                  >
+                    <option value="low">低</option>
+                    <option value="medium">中</option>
+                    <option value="high">高</option>
+                  </select>
                 </label>
               </div>
 
               <label htmlFor="task-due-date">
-                <span>截止日期</span>
-                <div className="field-control date-control">
-                  <CalendarDays aria-hidden="true" size={18} />
+                <span>日期</span>
+                <div className="date-field">
+                  <CalendarDays size={17} />
                   <input
                     id="task-due-date"
                     value={draft.dueDate}
@@ -1124,49 +1022,22 @@ export default function App() {
                 </div>
               </label>
 
-              <footer className="modal-actions">
-                <button className="secondary-button" type="button" onClick={closeEditor}>
-                  取消
-                </button>
-                <button className="primary-button" type="submit">
-                  {editingTask ? "保存修改" : "创建任务"}
+              <footer className="sheet-actions">
+                {editingTask ? (
+                  <button
+                    className="delete-button"
+                    type="button"
+                    onClick={() => deleteTask(editingTask.id)}
+                  >
+                    <Trash2 size={16} />
+                    删除
+                  </button>
+                ) : null}
+                <button className="save-button" type="submit">
+                  {editingTask ? "保存" : "添加"}
                 </button>
               </footer>
             </form>
-          </section>
-        </div>
-      ) : null}
-
-      {confirmDelete ? (
-        <div className="modal-backdrop" role="presentation">
-          <section
-            className="confirm-modal"
-            role="alertdialog"
-            aria-modal="true"
-            aria-labelledby="confirm-title"
-            aria-describedby="confirm-description"
-          >
-            <div className="confirm-icon">
-              <Trash2 aria-hidden="true" size={24} />
-            </div>
-            <h2 id="confirm-title">删除这项任务？</h2>
-            <p id="confirm-description">“{confirmDelete.title}” 删除后无法恢复。</p>
-            <div className="modal-actions">
-              <button
-                className="secondary-button"
-                type="button"
-                onClick={() => setConfirmDelete(null)}
-              >
-                取消
-              </button>
-              <button
-                className="danger-button"
-                type="button"
-                onClick={() => deleteTask(confirmDelete.id)}
-              >
-                删除
-              </button>
-            </div>
           </section>
         </div>
       ) : null}

@@ -1,24 +1,23 @@
 # Todolist
 
-一个使用 React、TypeScript 和 Vite 构建的轻量级目标待办 Web 应用。项目围绕「今日待办」「本周计划」「未来目标」三个计划维度组织任务，支持任务创建、编辑、删除、完成归档和历史记录。
+Todolist 是一个 Windows 桌面待办挂件。它基于 React、TypeScript、Vite 和 Electron 构建，目标不是传统网页应用，而是一个可以贴在桌面右上角、轻量记录任务的透明桌面小工具。
 
-## 功能特性
+## 当前功能
 
-- 三类计划列表：今日待办、本周计划、未来目标
-- 任务 CRUD：新增、编辑、删除、完成 / 取消完成
-- 完成归档：任务完成后保留 5 秒撤销窗口，随后自动进入完成历史
-- 历史记录：按当前计划分类展示已完成任务，并支持恢复到计划列表
-- 本地持久化：使用 `localStorage` 保存任务与历史记录
-- 响应式布局：适配桌面端和移动端
-- 现代化界面：参考 Apple / Tailwind 风格的面板、控件和动效设计
+- 桌面挂件窗口：无边框、透明窗口、默认显示在主屏幕右上角。
+- 窗口层级：默认不置顶，打开浏览器或其他软件时可以自然盖住挂件；需要时可临时置顶。
+- 外观切换：支持“毛玻璃”和“透明”两种模式。
+- 开机自启动：可在管理面板中开启或关闭。
+- 任务分类：今日、本周、未来三个计划维度。
+- 任务管理：支持快速新增、详细新增、编辑、删除、完成和取消完成。
+- 完成归档：任务完成后保留 5 秒撤销窗口，随后进入完成历史。
+- 历史记录：可查看完整完成历史，并把历史任务恢复回待办列表。
+- 本地持久化：桌面版使用 JSON 文件保存任务和历史。
 
-## 技术栈
+## 外观说明
 
-- React 18
-- TypeScript
-- Vite
-- lucide-react
-- CSS3
+- 毛玻璃模式：使用透明 Electron 窗口 + CSS 毛玻璃面板实现，圆角由前端裁切，避免 Windows 原生 acrylic 在四角铺成矩形。
+- 透明模式：主挂件背景为透明，不再使用白色底板，尽量融入桌面壁纸；任务行和按钮保留轻微半透明浮层，保证可读性。
 
 ## 本地运行
 
@@ -28,68 +27,91 @@
 npm install
 ```
 
-启动开发服务器：
+运行 Web 开发服务器：
 
 ```bash
 npm run dev
 ```
 
-默认访问地址：
-
-```text
-http://127.0.0.1:5173/
-```
-
-## 生产构建
+运行桌面开发版：
 
 ```bash
-npm run build
+npm run desktop:dev
 ```
 
-构建产物会生成在 `dist/` 目录中，该目录已加入 `.gitignore`，不会提交到 GitHub。
+桌面开发命令会先执行生产构建，再启动 Electron。
+
+## 打包
+
+只生成未安装的 Windows 桌面目录：
+
+```bash
+npm run desktop:pack
+```
+
+生成安装包和便携版：
+
+```bash
+npm run desktop:build
+```
+
+打包产物会输出到 `release/`，该目录不会提交到 GitHub。
+
+## 数据存储
+
+桌面版数据默认保存到：
+
+```text
+%APPDATA%\Todolist\tasks.json
+```
+
+数据结构包含：
+
+- `version`：数据版本号
+- `tasks`：当前待办任务
+- `history`：完成历史
+- `updatedAt`：最后更新时间
+
+保存时会先写入临时文件 `tasks.tmp.json`，再替换正式文件，降低异常退出导致 JSON 损坏的风险。如果数据文件损坏，应用会把原文件改名为 `tasks.corrupt-*.json` 并创建默认数据。
+
+## 常用脚本
+
+```bash
+npm run dev            # 启动 Vite Web 开发服务器
+npm run build          # TypeScript 检查 + Vite 生产构建
+npm run preview        # 预览 Web 构建产物
+npm run desktop:dev    # 构建后启动 Electron
+npm run desktop:pack   # 生成 release/win-unpacked
+npm run desktop:build  # 生成安装包和便携版
+```
 
 ## 项目结构
 
 ```text
 .
-├── index.html
+├── electron
+│   ├── main.cjs       # Electron 主进程、窗口、托盘、IPC
+│   ├── preload.cjs    # Renderer 安全桥接
+│   └── storage.cjs    # 本地 JSON 存储
+├── src
+│   ├── App.tsx        # 挂件 UI 与任务逻辑
+│   ├── main.tsx
+│   └── styles.css     # 透明 / 毛玻璃外观
 ├── package.json
 ├── package-lock.json
-├── src
-│   ├── App.tsx
-│   ├── main.tsx
-│   └── styles.css
-├── tsconfig.json
-├── tsconfig.node.json
 └── vite.config.ts
 ```
 
-## 数据存储
+## 提交前检查
 
-应用当前不依赖后端服务，任务数据保存在浏览器本地：
-
-- 当前任务：`apple-style-todo.tasks.v1`
-- 完成历史：`apple-style-todo.history.v1`
-
-清理浏览器站点数据会同步清空这些本地记录。
-
-## GitHub 提交参考
-
-如果是首次推送到新仓库，可以在项目根目录执行：
-
-```bash
-git init
-git add .
-git commit -m "feat: add todolist app"
-git branch -M main
-git remote add origin git@github.com:CWDONG404/todolist.git
-git push -u origin main
-```
-
-提交前建议先运行：
+提交前至少运行：
 
 ```bash
 npm run build
 ```
 
-确保 TypeScript 检查和生产构建都能通过。
+如果修改了 Electron 窗口、存储或打包配置，建议再运行：
+
+```bash
+npm run desktop:pack
+```

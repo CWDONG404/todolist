@@ -193,28 +193,11 @@ function createTaskStore(userDataPath) {
     }
   }
 
-  function exportTo(filePath) {
-    const current = load().data;
-
-    safeWriteJson(filePath, current);
-
-    return current;
-  }
-
-  function importFrom(filePath) {
-    const parsed = JSON.parse(fs.readFileSync(filePath, "utf8"));
-    const data = save(parsed);
-
-    return data;
-  }
-
   return {
     dataPath,
     storageDir,
     load,
     save,
-    exportTo,
-    importFrom,
   };
 }
 

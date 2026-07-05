@@ -4,8 +4,6 @@ contextBridge.exposeInMainWorld("desktop", {
   tasks: {
     load: (migrationCandidate) => ipcRenderer.invoke("tasks:load", migrationCandidate),
     save: (data) => ipcRenderer.invoke("tasks:save", data),
-    export: () => ipcRenderer.invoke("tasks:export"),
-    import: () => ipcRenderer.invoke("tasks:import"),
     openStorageFolder: () => ipcRenderer.invoke("tasks:open-storage-folder"),
     onChanged: (callback) => {
       const listener = (_event, data) => callback(data);
@@ -17,7 +15,6 @@ contextBridge.exposeInMainWorld("desktop", {
   },
   hideWindow: () => ipcRenderer.invoke("window:hide"),
   setMiniAlwaysOnTop: (enabled) => ipcRenderer.invoke("window:set-mini-always-on-top", enabled),
-  setAppearanceMaterial: (mode) => ipcRenderer.invoke("window:set-appearance-material", mode),
   getAutoLaunch: () => ipcRenderer.invoke("app:get-auto-launch"),
   setAutoLaunch: (enabled) => ipcRenderer.invoke("app:set-auto-launch", enabled),
 });

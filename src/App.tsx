@@ -3,7 +3,6 @@ import {
   CalendarDays,
   CheckCircle2,
   Circle,
-  Download,
   FolderOpen,
   GripHorizontal,
   Layers,
@@ -14,7 +13,6 @@ import {
   Power,
   SlidersHorizontal,
   Trash2,
-  Upload,
   X,
 } from "lucide-react";
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
@@ -76,29 +74,15 @@ type TaskSaveResult = {
   };
 };
 
-type TaskExportResult = {
-  canceled: boolean;
-  filePath?: string;
-};
-
-type TaskImportResult = {
-  canceled: boolean;
-  data?: TaskStorageData;
-  filePath?: string;
-};
-
 type DesktopBridge = {
   tasks: {
     load: (migrationCandidate?: TaskStorageData) => Promise<TaskLoadResult>;
     save: (data: TaskStorageData) => Promise<TaskSaveResult>;
-    export: () => Promise<TaskExportResult>;
-    import: () => Promise<TaskImportResult>;
     openStorageFolder: () => Promise<void>;
     onChanged: (callback: (data: TaskStorageData) => void) => () => void;
   };
   hideWindow?: () => Promise<void>;
   setMiniAlwaysOnTop?: (enabled: boolean) => Promise<boolean>;
-  setAppearanceMaterial?: (mode: AppearanceMode) => Promise<AppearanceMode>;
   getAutoLaunch?: () => Promise<boolean>;
   setAutoLaunch?: (enabled: boolean) => Promise<boolean>;
 };
@@ -320,6 +304,25 @@ function formatToday() {
   }).format(new Date());
 }
 
+function formatDateTime(value: string) {
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return "未知时间";
+  }
+
+  return new Intl.DateTimeFormat("zh-CN", {
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(date);
+}
+
+function getCategoryShortLabel(categoryId: TaskCategory) {
+  return categories.find((category) => category.id === categoryId)?.shortLabel ?? "待办";
+}
+
 function sortTasks(tasks: Task[]) {
   const priorityWeight: Record<TaskPriority, number> = {
     high: 0,
@@ -355,6 +358,7 @@ export default function App() {
   const [editingTask, setEditingTask] = useState<Task | null>(null);
   const [isEditorOpen, setIsEditorOpen] = useState(false);
   const [isPanelOpen, setIsPanelOpen] = useState(false);
+  const [isHistoryOpen, setIsHistoryOpen] = useState(false);
   const [appearanceMode, setAppearanceMode] = useState<AppearanceMode>(loadAppearanceMode);
   const [isPinned, setIsPinned] = useState(false);
   const [isAutoLaunchEnabled, setIsAutoLaunchEnabled] = useState(false);
@@ -435,10 +439,7 @@ export default function App() {
       // Style preference is non-critical; ignore unavailable localStorage.
     }
 
-    desktopApi?.setAppearanceMaterial?.(appearanceMode).catch((error: unknown) => {
-      setStorageNotice(error instanceof Error ? error.message : "无法切换窗口样式。");
-    });
-  }, [appearanceMode, desktopApi]);
+  }, [appearanceMode]);
 
   useEffect(() => {
     if (!isStorageReady) {
@@ -487,7 +488,10 @@ export default function App() {
   const pendingSelectedTasks = selectedTasks.filter((task) => task.completed);
   const activeCount = tasks.filter((task) => !task.completed).length;
   const completedCount = history.length + tasks.filter((task) => task.completed).length;
-  const recentHistory = history.slice(0, 4);
+  const historyItems = useMemo(
+    () => [...history].sort((a, b) => b.archivedAt.localeCompare(a.archivedAt)),
+    [history],
+  );
 
   function archiveCompletedTask(id: string) {
     const task = tasksRef.current.find((item) => item.id === id && item.completed);
@@ -669,6 +673,7 @@ export default function App() {
     );
     setTasks((currentTasks) => [restoredTask, ...currentTasks]);
     setSelectedCategory(item.category);
+    setStorageNotice("已恢复历史任务。");
   }
 
   function toggleAppearanceMode() {
@@ -688,33 +693,6 @@ export default function App() {
     } catch (error) {
       setIsPinned(!nextPinned);
       setStorageNotice(error instanceof Error ? error.message : "无法切换置顶。");
-    }
-  }
-
-  async function exportData() {
-    try {
-      const result = await desktopApi?.tasks.export();
-
-      if (result && !result.canceled) {
-        setStorageNotice("已导出 JSON 备份。");
-      }
-    } catch (error) {
-      setStorageNotice(error instanceof Error ? error.message : "数据导出失败。");
-    }
-  }
-
-  async function importData() {
-    try {
-      const result = await desktopApi?.tasks.import();
-
-      if (result?.data) {
-        skipNextSaveRef.current = true;
-        setTasks(result.data.tasks);
-        setHistory(result.data.history);
-        setStorageNotice("已导入 JSON 备份。");
-      }
-    } catch (error) {
-      setStorageNotice(error instanceof Error ? error.message : "数据导入失败。");
     }
   }
 
@@ -899,36 +877,14 @@ export default function App() {
                 <FolderOpen size={16} />
                 数据目录
               </button>
-              <button type="button" onClick={exportData}>
-                <Download size={16} />
-                导出
-              </button>
-              <button type="button" onClick={importData}>
-                <Upload size={16} />
-                导入
-              </button>
-            </div>
-
-            <div className="history-compact">
-              <div className="history-title">
+              <button
+                className={isHistoryOpen ? "is-selected" : ""}
+                type="button"
+                onClick={() => setIsHistoryOpen(true)}
+              >
                 <ArchiveRestore size={16} />
-                最近完成
-              </div>
-              {recentHistory.length > 0 ? (
-                recentHistory.map((item) => (
-                  <button
-                    className="restore-item"
-                    key={`${item.id}-${item.archivedAt}`}
-                    type="button"
-                    onClick={() => restoreHistoryItem(item)}
-                  >
-                    <span>{item.title}</span>
-                    <ArchiveRestore size={14} />
-                  </button>
-                ))
-              ) : (
-                <p className="history-empty-text">还没有归档任务。</p>
-              )}
+                历史记录
+              </button>
             </div>
           </section>
         ) : null}
@@ -1066,6 +1022,63 @@ export default function App() {
                 </button>
               </footer>
             </form>
+          </section>
+        </div>
+      ) : null}
+
+      {isHistoryOpen ? (
+        <div className="modal-backdrop history-backdrop" role="presentation">
+          <section
+            className="history-sheet"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="history-title"
+          >
+            <header className="sheet-header">
+              <div>
+                <p>完成历史</p>
+                <h2 id="history-title">{historyItems.length} 条记录</h2>
+              </div>
+              <button
+                className="round-button"
+                type="button"
+                aria-label="关闭历史记录"
+                title="关闭"
+                onClick={() => setIsHistoryOpen(false)}
+              >
+                <X size={16} />
+              </button>
+            </header>
+
+            <div className="history-list">
+              {historyItems.length > 0 ? (
+                historyItems.map((item) => (
+                  <article className="history-row" key={`${item.id}-${item.archivedAt}`}>
+                    <div>
+                      <strong>{item.title}</strong>
+                      <span>
+                        {getCategoryShortLabel(item.category)} · 完成{" "}
+                        {formatDateTime(item.completedAt)}
+                      </span>
+                    </div>
+                    <button
+                      className="history-restore-button"
+                      type="button"
+                      aria-label="恢复任务"
+                      title="恢复任务"
+                      onClick={() => restoreHistoryItem(item)}
+                    >
+                      <ArchiveRestore size={16} />
+                    </button>
+                  </article>
+                ))
+              ) : (
+                <div className="history-empty-state">
+                  <CheckCircle2 size={30} />
+                  <p>还没有完成记录</p>
+                </div>
+              )}
+            </div>
           </section>
         </div>
       ) : null}

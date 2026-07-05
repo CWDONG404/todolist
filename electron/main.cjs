@@ -3,7 +3,6 @@ const { pathToFileURL } = require("node:url");
 const {
   app,
   BrowserWindow,
-  dialog,
   ipcMain,
   Menu,
   nativeImage,
@@ -92,7 +91,7 @@ function createWindow(mode = "widget") {
     frame: false,
     transparent: true,
     backgroundColor: "#00000000",
-    backgroundMaterial: "acrylic",
+    backgroundMaterial: "none",
     hasShadow: false,
     resizable: true,
     alwaysOnTop: false,
@@ -188,46 +187,6 @@ function setupIpc() {
     };
   });
 
-  ipcMain.handle("tasks:export", async () => {
-    const result = await dialog.showSaveDialog({
-      title: "导出 Todolist 数据",
-      defaultPath: "todolist-backup.json",
-      filters: [{ name: "JSON 文件", extensions: ["json"] }],
-    });
-
-    if (result.canceled || !result.filePath) {
-      return { canceled: true };
-    }
-
-    taskStore.exportTo(result.filePath);
-
-    return {
-      canceled: false,
-      filePath: result.filePath,
-    };
-  });
-
-  ipcMain.handle("tasks:import", async (event) => {
-    const result = await dialog.showOpenDialog({
-      title: "导入 Todolist 数据",
-      properties: ["openFile"],
-      filters: [{ name: "JSON 文件", extensions: ["json"] }],
-    });
-
-    if (result.canceled || result.filePaths.length === 0) {
-      return { canceled: true };
-    }
-
-    const data = taskStore.importFrom(result.filePaths[0]);
-    broadcastTasksChanged(data, event.sender);
-
-    return {
-      canceled: false,
-      data,
-      filePath: result.filePaths[0],
-    };
-  });
-
   ipcMain.handle("tasks:open-storage-folder", () => {
     shell.showItemInFolder(taskStore.dataPath);
   });
@@ -245,16 +204,6 @@ function setupIpc() {
     }
 
     return false;
-  });
-  ipcMain.handle("window:set-appearance-material", (event, mode) => {
-    const window = BrowserWindow.fromWebContents(event.sender);
-    const nextMode = mode === "clear" ? "clear" : "glass";
-
-    if (window) {
-      window.setBackgroundMaterial(nextMode === "glass" ? "acrylic" : "none");
-    }
-
-    return nextMode;
   });
   ipcMain.handle("app:get-auto-launch", () => getAutoLaunchEnabled());
   ipcMain.handle("app:set-auto-launch", (_event, enabled) => setAutoLaunchEnabled(enabled));

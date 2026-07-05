@@ -70,6 +70,8 @@ button {
   overflow: hidden;
   border: 1px solid var(--stroke);
   border-radius: 26px;
+  background-clip: padding-box;
+  clip-path: inset(0 round 26px);
   color: var(--text);
   background:
     linear-gradient(145deg, rgba(255, 255, 255, 0.76), rgba(255, 255, 255, 0.28) 46%),
@@ -81,6 +83,7 @@ button {
     inset 0 0 28px rgba(255, 255, 255, 0.18);
   backdrop-filter: blur(34px) saturate(1.8);
   -webkit-backdrop-filter: blur(34px) saturate(1.8);
+  isolation: isolate;
 }
 
 .glass-widget::before {
@@ -386,8 +389,7 @@ button {
   text-align: left;
 }
 
-.task-main strong,
-.restore-item span {
+.task-main strong {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -436,7 +438,7 @@ button {
 
 .footer-button,
 .drawer-actions button,
-.restore-item,
+.history-restore-button,
 .delete-button,
 .save-button {
   display: inline-flex;
@@ -497,23 +499,19 @@ button {
 }
 
 .widget-stage.is-clear .glass-widget {
-  border-color: rgba(255, 255, 255, 0.42);
-  background:
-    linear-gradient(145deg, rgba(255, 255, 255, 0.3), rgba(255, 255, 255, 0.1) 48%),
-    rgba(255, 255, 255, 0.16);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.54),
-    inset 0 0 22px rgba(255, 255, 255, 0.1);
-  backdrop-filter: blur(2px) saturate(1.05);
-  -webkit-backdrop-filter: blur(2px) saturate(1.05);
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
 }
 
 .widget-stage.is-clear .glass-widget::before {
-  border-color: rgba(255, 255, 255, 0.24);
+  border-color: transparent;
 }
 
 .widget-stage.is-clear .glass-widget::after {
-  opacity: 0.36;
+  opacity: 0;
 }
 
 .widget-stage.is-clear .category-tabs,
@@ -523,12 +521,14 @@ button {
 .widget-stage.is-clear .metric-row span,
 .widget-stage.is-clear .footer-button,
 .widget-stage.is-clear .drawer-actions button,
-.widget-stage.is-clear .restore-item {
-  background: rgba(255, 255, 255, 0.22);
+.widget-stage.is-clear .history-row {
+  background: rgba(255, 255, 255, 0.12);
+  backdrop-filter: blur(10px) saturate(1.15);
+  -webkit-backdrop-filter: blur(10px) saturate(1.15);
 }
 
 .widget-stage.is-clear .category-tabs button.is-selected {
-  background: rgba(255, 255, 255, 0.48);
+  background: rgba(255, 255, 255, 0.22);
 }
 
 .widget-stage.is-clear .drawer-actions button.is-enabled {
@@ -541,31 +541,95 @@ button {
   background: rgba(10, 132, 255, 0.62);
 }
 
-.history-compact {
+.history-sheet {
   display: grid;
-  gap: 7px;
+  grid-template-rows: auto minmax(0, 1fr);
+  max-height: calc(100vh - 24px);
+  overflow: hidden;
+  padding: 16px;
+  border: 1px solid var(--stroke);
+  border-radius: 24px;
+  background:
+    linear-gradient(150deg, rgba(255, 255, 255, 0.82), rgba(255, 255, 255, 0.46)),
+    var(--glass-strong);
+  box-shadow: var(--shadow);
+  backdrop-filter: blur(34px) saturate(1.7);
+  -webkit-backdrop-filter: blur(34px) saturate(1.7);
 }
 
-.history-title {
-  display: inline-flex;
+.history-list {
+  display: grid;
+  align-content: start;
+  gap: 8px;
+  min-height: 0;
+  overflow: auto;
+  padding-right: 2px;
+}
+
+.history-list::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+}
+
+.history-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 34px;
+  gap: 10px;
   align-items: center;
-  gap: 6px;
-  color: var(--muted);
-  font-size: 12px;
-  font-weight: 780;
-}
-
-.restore-item {
-  justify-content: space-between;
-  width: 100%;
+  min-height: 58px;
   min-width: 0;
-  padding: 0 10px;
+  padding: 10px;
+  border: 1px solid var(--inner-stroke);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.34);
 }
 
-.history-empty-text {
-  margin: 0;
+.history-row div {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.history-row strong {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 14px;
+  line-height: 1.28;
+  font-weight: 760;
+}
+
+.history-row span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   color: var(--muted);
   font-size: 12px;
+}
+
+.history-restore-button {
+  width: 34px;
+  height: 34px;
+  border-radius: 999px;
+  color: var(--blue);
+}
+
+.history-empty-state {
+  display: grid;
+  gap: 8px;
+  min-height: 180px;
+  place-items: center;
+  align-content: center;
+  color: var(--muted);
+  text-align: center;
+}
+
+.history-empty-state p {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 760;
 }
 
 .modal-backdrop {
@@ -740,18 +804,15 @@ button {
   .quick-add,
   .task-row,
   .drawer-panel,
-  .editor-sheet {
+  .editor-sheet,
+  .history-sheet {
     background: rgba(255, 255, 255, 0.12);
   }
 
   .widget-stage.is-clear .glass-widget {
-    border-color: rgba(255, 255, 255, 0.14);
-    background:
-      linear-gradient(145deg, rgba(72, 82, 104, 0.22), rgba(14, 18, 28, 0.16) 52%),
-      rgba(10, 12, 18, 0.2);
-    box-shadow:
-      inset 0 1px 0 rgba(255, 255, 255, 0.18),
-      inset 0 0 22px rgba(255, 255, 255, 0.04);
+    border-color: transparent;
+    background: transparent;
+    box-shadow: none;
   }
 
   .widget-stage.is-clear .category-tabs,
@@ -761,7 +822,7 @@ button {
   .widget-stage.is-clear .metric-row span,
   .widget-stage.is-clear .footer-button,
   .widget-stage.is-clear .drawer-actions button,
-  .widget-stage.is-clear .restore-item {
+  .widget-stage.is-clear .history-row {
     background: rgba(255, 255, 255, 0.08);
   }
 

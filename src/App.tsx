@@ -5,9 +5,12 @@ import {
   CheckCircle2,
   ChevronDown,
   Circle,
+  Database,
+  Download,
   Clock3,
   Edit3,
   Flag,
+  FolderOpen,
   Goal,
   History as HistoryIcon,
   LayoutGrid,
@@ -16,6 +19,7 @@ import {
   Search,
   Trash2,
   Undo2,
+  Upload,
   X,
 } from "lucide-react";
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
@@ -54,6 +58,61 @@ type ConfirmDelete = {
   id: string;
   title: string;
 } | null;
+
+type TaskStorageData = {
+  version: 1;
+  tasks: Task[];
+  history: CompletedTask[];
+  updatedAt: string;
+};
+
+type TaskLoadResult = {
+  data: TaskStorageData;
+  status?: {
+    created?: boolean;
+    migrated?: boolean;
+    recovered?: boolean;
+    backupPath?: string;
+    storagePath?: string;
+    message?: string;
+  };
+};
+
+type TaskSaveResult = {
+  data: TaskStorageData;
+  status?: {
+    storagePath?: string;
+  };
+};
+
+type TaskExportResult = {
+  canceled: boolean;
+  filePath?: string;
+};
+
+type TaskImportResult = {
+  canceled: boolean;
+  data?: TaskStorageData;
+  filePath?: string;
+};
+
+type DesktopBridge = {
+  tasks: {
+    load: (migrationCandidate?: TaskStorageData) => Promise<TaskLoadResult>;
+    save: (data: TaskStorageData) => Promise<TaskSaveResult>;
+    export: () => Promise<TaskExportResult>;
+    import: () => Promise<TaskImportResult>;
+    openStorageFolder: () => Promise<void>;
+    onChanged: (callback: (data: TaskStorageData) => void) => () => void;
+  };
+  openMiniWindow: () => Promise<void>;
+};
+
+declare global {
+  interface Window {
+    desktop?: DesktopBridge;
+  }
+}
 
 const STORAGE_KEY = "apple-style-todo.tasks.v1";
 const HISTORY_STORAGE_KEY = "apple-style-todo.history.v1";
@@ -149,7 +208,7 @@ function createId() {
   return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 }
 
-function loadTasks(): Task[] {
+function loadLocalTasks(): Task[] {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
 
@@ -177,7 +236,7 @@ function loadTasks(): Task[] {
   }
 }
 
-function loadHistory(): CompletedTask[] {
+function loadLocalHistory(): CompletedTask[] {
   try {
     const raw = localStorage.getItem(HISTORY_STORAGE_KEY);
 
@@ -193,6 +252,23 @@ function loadHistory(): CompletedTask[] {
     return parsed.filter(isCompletedTask);
   } catch {
     return [];
+  }
+}
+
+function createStorageData(tasks: Task[], history: CompletedTask[]): TaskStorageData {
+  return {
+    version: 1,
+    tasks,
+    history,
+    updatedAt: new Date().toISOString(),
+  };
+}
+
+function hasLocalStorageData() {
+  try {
+    return Boolean(localStorage.getItem(STORAGE_KEY) || localStorage.getItem(HISTORY_STORAGE_KEY));
+  } catch {
+    return false;
   }
 }
 
@@ -273,9 +349,17 @@ function sortTasks(tasks: Task[]) {
 }
 
 export default function App() {
-  const [tasks, setTasks] = useState<Task[]>(loadTasks);
-  const [history, setHistory] = useState<CompletedTask[]>(loadHistory);
+  const desktopApi = typeof window !== "undefined" ? window.desktop : undefined;
+  const isDesktop = Boolean(desktopApi);
+  const isMiniMode =
+    typeof window !== "undefined" &&
+    new URLSearchParams(window.location.search).get("mode") === "mini";
+  const [tasks, setTasks] = useState<Task[]>(loadLocalTasks);
+  const [history, setHistory] = useState<CompletedTask[]>(loadLocalHistory);
   const tasksRef = useRef<Task[]>(tasks);
+  const skipNextSaveRef = useRef(false);
+  const [isStorageReady, setIsStorageReady] = useState(!isDesktop);
+  const [storageNotice, setStorageNotice] = useState("");
   const [selectedCategory, setSelectedCategory] = useState<TaskCategory>("today");
   const [isCategoryMenuOpen, setIsCategoryMenuOpen] = useState(false);
   const [draft, setDraft] = useState<TaskDraft>(emptyDraft);
@@ -286,12 +370,80 @@ export default function App() {
 
   useEffect(() => {
     tasksRef.current = tasks;
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(tasks));
   }, [tasks]);
 
   useEffect(() => {
-    localStorage.setItem(HISTORY_STORAGE_KEY, JSON.stringify(history));
-  }, [history]);
+    if (!desktopApi) {
+      return;
+    }
+
+    let isActive = true;
+    const migrationCandidate = hasLocalStorageData()
+      ? createStorageData(loadLocalTasks(), loadLocalHistory())
+      : undefined;
+
+    desktopApi.tasks
+      .load(migrationCandidate)
+      .then((result) => {
+        if (!isActive) {
+          return;
+        }
+
+        skipNextSaveRef.current = true;
+        setTasks(result.data.tasks);
+        setHistory(result.data.history);
+        setIsStorageReady(true);
+
+        if (result.status?.recovered) {
+          setStorageNotice(`数据文件损坏，已恢复默认数据，原文件已备份。`);
+        } else if (result.status?.created && result.status?.migrated) {
+          setStorageNotice("已把浏览器本地数据迁移到桌面数据文件。");
+        } else if (result.status?.created) {
+          setStorageNotice("已创建桌面数据文件。");
+        }
+      })
+      .catch((error: unknown) => {
+        if (!isActive) {
+          return;
+        }
+
+        setIsStorageReady(true);
+        setStorageNotice(error instanceof Error ? error.message : "桌面数据读取失败。");
+      });
+
+    const removeListener = desktopApi.tasks.onChanged((data) => {
+      skipNextSaveRef.current = true;
+      setTasks(data.tasks);
+      setHistory(data.history);
+      setStorageNotice("已同步其他窗口的数据修改。");
+    });
+
+    return () => {
+      isActive = false;
+      removeListener();
+    };
+  }, [desktopApi]);
+
+  useEffect(() => {
+    if (!isStorageReady) {
+      return;
+    }
+
+    if (skipNextSaveRef.current) {
+      skipNextSaveRef.current = false;
+      return;
+    }
+
+    if (!desktopApi) {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(tasks));
+      localStorage.setItem(HISTORY_STORAGE_KEY, JSON.stringify(history));
+      return;
+    }
+
+    desktopApi.tasks.save(createStorageData(tasks, history)).catch((error: unknown) => {
+      setStorageNotice(error instanceof Error ? error.message : "桌面数据保存失败。");
+    });
+  }, [desktopApi, history, isStorageReady, tasks]);
 
   useEffect(() => {
     const timers = tasks
@@ -502,8 +654,51 @@ export default function App() {
     setSelectedCategory(item.category);
   }
 
+  async function openStorageFolder() {
+    try {
+      await desktopApi?.tasks.openStorageFolder();
+    } catch (error) {
+      setStorageNotice(error instanceof Error ? error.message : "无法打开数据文件夹。");
+    }
+  }
+
+  async function exportData() {
+    try {
+      const result = await desktopApi?.tasks.export();
+
+      if (result && !result.canceled) {
+        setStorageNotice("数据已导出为 JSON 备份。");
+      }
+    } catch (error) {
+      setStorageNotice(error instanceof Error ? error.message : "数据导出失败。");
+    }
+  }
+
+  async function importData() {
+    try {
+      const result = await desktopApi?.tasks.import();
+
+      if (result?.data) {
+        skipNextSaveRef.current = true;
+        setTasks(result.data.tasks);
+        setHistory(result.data.history);
+        setStorageNotice("数据已从 JSON 备份导入。");
+      }
+    } catch (error) {
+      setStorageNotice(error instanceof Error ? error.message : "数据导入失败。");
+    }
+  }
+
+  async function openMiniWindow() {
+    try {
+      await desktopApi?.openMiniWindow();
+    } catch (error) {
+      setStorageNotice(error instanceof Error ? error.message : "无法打开迷你挂件。");
+    }
+  }
+
   return (
-    <main className="app-shell">
+    <main className={`app-shell ${isMiniMode ? "is-mini-mode" : ""}`}>
       <section className="todo-frame" aria-label="计划任务工作区">
         <aside className="control-panel" aria-label="计划控制栏">
           <div className="summary-strip" aria-label="任务统计">
@@ -587,6 +782,34 @@ export default function App() {
             <Plus aria-hidden="true" size={18} />
             新增任务
           </button>
+
+          {isDesktop ? (
+            <div className="data-panel" aria-label="桌面数据管理">
+              <div className="data-panel-title">
+                <Database aria-hidden="true" size={16} />
+                <span>数据管理</span>
+              </div>
+              <div className="data-actions">
+                <button type="button" onClick={openMiniWindow}>
+                  <LayoutGrid aria-hidden="true" size={15} />
+                  迷你挂件
+                </button>
+                <button type="button" onClick={openStorageFolder}>
+                  <FolderOpen aria-hidden="true" size={15} />
+                  数据目录
+                </button>
+                <button type="button" onClick={exportData}>
+                  <Download aria-hidden="true" size={15} />
+                  导出
+                </button>
+                <button type="button" onClick={importData}>
+                  <Upload aria-hidden="true" size={15} />
+                  导入
+                </button>
+              </div>
+              {storageNotice ? <p className="storage-notice">{storageNotice}</p> : null}
+            </div>
+          ) : null}
         </aside>
 
         <section className="planner-panel">
@@ -706,6 +929,7 @@ export default function App() {
           </div>
         </section>
 
+        {!isMiniMode ? (
         <aside className="history-panel" aria-label="完成历史">
           <header className="history-header">
             <div>
@@ -773,6 +997,7 @@ export default function App() {
             )}
           </div>
         </aside>
+        ) : null}
       </section>
 
       {isEditorOpen ? (

@@ -68,7 +68,7 @@ function getAppUrl(mode) {
 function placeWindowTopRight(window) {
   const margin = 24;
   const bounds = window.getBounds();
-  const display = screen.getDisplayNearestPoint(screen.getCursorScreenPoint());
+  const display = screen.getPrimaryDisplay();
   const { x, y, width } = display.workArea;
 
   window.setPosition(x + width - bounds.width - margin, y + margin, false);
@@ -92,9 +92,10 @@ function createWindow(mode = "widget") {
     frame: false,
     transparent: true,
     backgroundColor: "#00000000",
+    backgroundMaterial: "acrylic",
     hasShadow: false,
     resizable: true,
-    alwaysOnTop: true,
+    alwaysOnTop: false,
     skipTaskbar: true,
     autoHideMenuBar: true,
     show: false,
@@ -110,7 +111,8 @@ function createWindow(mode = "widget") {
 
   window.once("ready-to-show", () => {
     placeWindowTopRight(window);
-    window.show();
+    window.showInactive();
+    window.setAlwaysOnTop(false);
   });
 
   window.on("close", (event) => {
@@ -230,11 +232,6 @@ function setupIpc() {
     shell.showItemInFolder(taskStore.dataPath);
   });
 
-  ipcMain.handle("window:open-main", () => createWindow("widget"));
-  ipcMain.handle("window:open-mini", () => createWindow("widget"));
-  ipcMain.handle("window:minimize", (event) => {
-    BrowserWindow.fromWebContents(event.sender)?.minimize();
-  });
   ipcMain.handle("window:hide", (event) => {
     BrowserWindow.fromWebContents(event.sender)?.hide();
   });
@@ -243,7 +240,21 @@ function setupIpc() {
 
     if (window) {
       window.setAlwaysOnTop(Boolean(enabled));
+
+      return window.isAlwaysOnTop();
     }
+
+    return false;
+  });
+  ipcMain.handle("window:set-appearance-material", (event, mode) => {
+    const window = BrowserWindow.fromWebContents(event.sender);
+    const nextMode = mode === "clear" ? "clear" : "glass";
+
+    if (window) {
+      window.setBackgroundMaterial(nextMode === "glass" ? "acrylic" : "none");
+    }
+
+    return nextMode;
   });
   ipcMain.handle("app:get-auto-launch", () => getAutoLaunchEnabled());
   ipcMain.handle("app:set-auto-launch", (_event, enabled) => setAutoLaunchEnabled(enabled));

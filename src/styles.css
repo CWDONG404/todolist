@@ -7,8 +7,8 @@
   --text: rgba(20, 24, 32, 0.92);
   --muted: rgba(60, 67, 81, 0.66);
   --faint: rgba(60, 67, 81, 0.42);
-  --glass: rgba(255, 255, 255, 0.48);
-  --glass-strong: rgba(255, 255, 255, 0.68);
+  --glass: rgba(255, 255, 255, 0.56);
+  --glass-strong: rgba(255, 255, 255, 0.7);
   --glass-soft: rgba(255, 255, 255, 0.28);
   --stroke: rgba(255, 255, 255, 0.68);
   --inner-stroke: rgba(20, 24, 32, 0.08);
@@ -16,8 +16,8 @@
   --green: #34c759;
   --orange: #ff9f0a;
   --red: #ff453a;
-  --shadow: 0 28px 70px rgba(15, 23, 42, 0.22);
-  --soft-shadow: 0 10px 28px rgba(15, 23, 42, 0.12);
+  --shadow: 0 16px 34px rgba(15, 23, 42, 0.12);
+  --soft-shadow: 0 8px 18px rgba(15, 23, 42, 0.08);
 }
 
 * {
@@ -54,7 +54,7 @@ button {
   display: grid;
   width: 100vw;
   min-height: 100vh;
-  padding: 12px;
+  padding: 0;
   place-items: stretch;
   background: transparent;
 }
@@ -69,7 +69,7 @@ button {
   padding: 14px;
   overflow: hidden;
   border: 1px solid var(--stroke);
-  border-radius: 30px;
+  border-radius: 26px;
   color: var(--text);
   background:
     linear-gradient(145deg, rgba(255, 255, 255, 0.76), rgba(255, 255, 255, 0.28) 46%),
@@ -78,7 +78,7 @@ button {
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.78),
     inset 0 -1px 0 rgba(255, 255, 255, 0.2),
-    var(--shadow);
+    inset 0 0 28px rgba(255, 255, 255, 0.18);
   backdrop-filter: blur(34px) saturate(1.8);
   -webkit-backdrop-filter: blur(34px) saturate(1.8);
 }
@@ -88,7 +88,7 @@ button {
   position: absolute;
   inset: 1px;
   pointer-events: none;
-  border-radius: 29px;
+  border-radius: 25px;
   border: 1px solid rgba(255, 255, 255, 0.34);
 }
 
@@ -98,9 +98,9 @@ button {
   inset: 0;
   pointer-events: none;
   background:
-    linear-gradient(115deg, rgba(255, 255, 255, 0.38), transparent 34%),
-    linear-gradient(270deg, rgba(10, 132, 255, 0.08), transparent 42%);
-  opacity: 0.95;
+    linear-gradient(115deg, rgba(255, 255, 255, 0.28), transparent 34%),
+    linear-gradient(270deg, rgba(10, 132, 255, 0.04), transparent 42%);
+  opacity: 0.72;
 }
 
 .glass-widget > * {
@@ -161,6 +161,12 @@ button {
   transform: translateY(-1px);
   border-color: rgba(255, 255, 255, 0.8);
   background: rgba(255, 255, 255, 0.54);
+}
+
+.chrome-button.is-active {
+  color: #ffffff;
+  border-color: rgba(10, 132, 255, 0.26);
+  background: rgba(10, 132, 255, 0.76);
 }
 
 .hero-strip {
@@ -484,6 +490,57 @@ button {
   background: rgba(52, 199, 89, 0.78);
 }
 
+.drawer-actions button.is-selected {
+  color: #ffffff;
+  border-color: rgba(10, 132, 255, 0.3);
+  background: rgba(10, 132, 255, 0.72);
+}
+
+.widget-stage.is-clear .glass-widget {
+  border-color: rgba(255, 255, 255, 0.42);
+  background:
+    linear-gradient(145deg, rgba(255, 255, 255, 0.3), rgba(255, 255, 255, 0.1) 48%),
+    rgba(255, 255, 255, 0.16);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.54),
+    inset 0 0 22px rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(2px) saturate(1.05);
+  -webkit-backdrop-filter: blur(2px) saturate(1.05);
+}
+
+.widget-stage.is-clear .glass-widget::before {
+  border-color: rgba(255, 255, 255, 0.24);
+}
+
+.widget-stage.is-clear .glass-widget::after {
+  opacity: 0.36;
+}
+
+.widget-stage.is-clear .category-tabs,
+.widget-stage.is-clear .quick-add,
+.widget-stage.is-clear .task-row,
+.widget-stage.is-clear .drawer-panel,
+.widget-stage.is-clear .metric-row span,
+.widget-stage.is-clear .footer-button,
+.widget-stage.is-clear .drawer-actions button,
+.widget-stage.is-clear .restore-item {
+  background: rgba(255, 255, 255, 0.22);
+}
+
+.widget-stage.is-clear .category-tabs button.is-selected {
+  background: rgba(255, 255, 255, 0.48);
+}
+
+.widget-stage.is-clear .drawer-actions button.is-enabled {
+  color: #ffffff;
+  background: rgba(52, 199, 89, 0.68);
+}
+
+.widget-stage.is-clear .drawer-actions button.is-selected {
+  color: #ffffff;
+  background: rgba(10, 132, 255, 0.62);
+}
+
 .history-compact {
   display: grid;
   gap: 7px;
@@ -663,13 +720,13 @@ button {
     --text: rgba(246, 248, 252, 0.94);
     --muted: rgba(222, 229, 242, 0.68);
     --faint: rgba(222, 229, 242, 0.44);
-    --glass: rgba(22, 26, 36, 0.48);
+    --glass: rgba(22, 26, 36, 0.56);
     --glass-strong: rgba(33, 38, 51, 0.72);
     --glass-soft: rgba(35, 42, 56, 0.34);
     --stroke: rgba(255, 255, 255, 0.2);
     --inner-stroke: rgba(255, 255, 255, 0.1);
-    --shadow: 0 28px 78px rgba(0, 0, 0, 0.42);
-    --soft-shadow: 0 10px 30px rgba(0, 0, 0, 0.26);
+    --shadow: 0 16px 34px rgba(0, 0, 0, 0.24);
+    --soft-shadow: 0 8px 18px rgba(0, 0, 0, 0.16);
   }
 
   .glass-widget {
@@ -685,5 +742,38 @@ button {
   .drawer-panel,
   .editor-sheet {
     background: rgba(255, 255, 255, 0.12);
+  }
+
+  .widget-stage.is-clear .glass-widget {
+    border-color: rgba(255, 255, 255, 0.14);
+    background:
+      linear-gradient(145deg, rgba(72, 82, 104, 0.22), rgba(14, 18, 28, 0.16) 52%),
+      rgba(10, 12, 18, 0.2);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.18),
+      inset 0 0 22px rgba(255, 255, 255, 0.04);
+  }
+
+  .widget-stage.is-clear .category-tabs,
+  .widget-stage.is-clear .quick-add,
+  .widget-stage.is-clear .task-row,
+  .widget-stage.is-clear .drawer-panel,
+  .widget-stage.is-clear .metric-row span,
+  .widget-stage.is-clear .footer-button,
+  .widget-stage.is-clear .drawer-actions button,
+  .widget-stage.is-clear .restore-item {
+    background: rgba(255, 255, 255, 0.08);
+  }
+
+  .widget-stage.is-clear .category-tabs button.is-selected {
+    background: rgba(255, 255, 255, 0.16);
+  }
+
+  .widget-stage.is-clear .drawer-actions button.is-enabled {
+    background: rgba(52, 199, 89, 0.58);
+  }
+
+  .widget-stage.is-clear .drawer-actions button.is-selected {
+    background: rgba(10, 132, 255, 0.54);
   }
 }

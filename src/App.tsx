@@ -2,13 +2,11 @@ import {
   ArchiveRestore,
   CalendarDays,
   CheckCircle2,
-  ChevronDown,
   Circle,
-  Clock3,
   Download,
   FolderOpen,
   GripHorizontal,
-  Minus,
+  Layers,
   MoreHorizontal,
   Pin,
   PinOff,
@@ -23,6 +21,7 @@ import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 
 type TaskCategory = "today" | "week" | "future";
 type TaskPriority = "low" | "medium" | "high";
+type AppearanceMode = "glass" | "clear";
 
 type Task = {
   id: string;
@@ -97,10 +96,9 @@ type DesktopBridge = {
     openStorageFolder: () => Promise<void>;
     onChanged: (callback: (data: TaskStorageData) => void) => () => void;
   };
-  minimizeWindow?: () => Promise<void>;
   hideWindow?: () => Promise<void>;
-  openMiniWindow?: () => Promise<void>;
-  setMiniAlwaysOnTop?: (enabled: boolean) => Promise<void>;
+  setMiniAlwaysOnTop?: (enabled: boolean) => Promise<boolean>;
+  setAppearanceMaterial?: (mode: AppearanceMode) => Promise<AppearanceMode>;
   getAutoLaunch?: () => Promise<boolean>;
   setAutoLaunch?: (enabled: boolean) => Promise<boolean>;
 };
@@ -113,6 +111,7 @@ declare global {
 
 const STORAGE_KEY = "apple-style-todo.tasks.v1";
 const HISTORY_STORAGE_KEY = "apple-style-todo.history.v1";
+const APPEARANCE_STORAGE_KEY = "apple-style-todo.appearance.v1";
 const COMPLETION_DELAY_MS = 5000;
 
 const categories: Array<{
@@ -259,6 +258,14 @@ function hasLocalStorageData() {
   }
 }
 
+function loadAppearanceMode(): AppearanceMode {
+  try {
+    return localStorage.getItem(APPEARANCE_STORAGE_KEY) === "clear" ? "clear" : "glass";
+  } catch {
+    return "glass";
+  }
+}
+
 function isTask(value: unknown): value is Task {
   if (!value || typeof value !== "object") {
     return false;
@@ -348,7 +355,8 @@ export default function App() {
   const [editingTask, setEditingTask] = useState<Task | null>(null);
   const [isEditorOpen, setIsEditorOpen] = useState(false);
   const [isPanelOpen, setIsPanelOpen] = useState(false);
-  const [isPinned, setIsPinned] = useState(true);
+  const [appearanceMode, setAppearanceMode] = useState<AppearanceMode>(loadAppearanceMode);
+  const [isPinned, setIsPinned] = useState(false);
   const [isAutoLaunchEnabled, setIsAutoLaunchEnabled] = useState(false);
 
   useEffect(() => {
@@ -419,6 +427,18 @@ export default function App() {
         setStorageNotice(error instanceof Error ? error.message : "无法读取开机自启动状态。");
       });
   }, [desktopApi]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(APPEARANCE_STORAGE_KEY, appearanceMode);
+    } catch {
+      // Style preference is non-critical; ignore unavailable localStorage.
+    }
+
+    desktopApi?.setAppearanceMaterial?.(appearanceMode).catch((error: unknown) => {
+      setStorageNotice(error instanceof Error ? error.message : "无法切换窗口样式。");
+    });
+  }, [appearanceMode, desktopApi]);
 
   useEffect(() => {
     if (!isStorageReady) {
@@ -651,13 +671,22 @@ export default function App() {
     setSelectedCategory(item.category);
   }
 
+  function toggleAppearanceMode() {
+    const nextMode = appearanceMode === "glass" ? "clear" : "glass";
+    setAppearanceMode(nextMode);
+    setStorageNotice(nextMode === "glass" ? "已切换为毛玻璃。" : "已切换为透明。");
+  }
+
   async function togglePinned() {
     const nextPinned = !isPinned;
     setIsPinned(nextPinned);
 
     try {
-      await desktopApi?.setMiniAlwaysOnTop?.(nextPinned);
+      const actualPinned = await desktopApi?.setMiniAlwaysOnTop?.(nextPinned);
+      setIsPinned(Boolean(actualPinned));
+      setStorageNotice(actualPinned ? "已临时置顶。" : "已回到桌面挂件层。");
     } catch (error) {
+      setIsPinned(!nextPinned);
       setStorageNotice(error instanceof Error ? error.message : "无法切换置顶。");
     }
   }
@@ -704,7 +733,7 @@ export default function App() {
   }
 
   return (
-    <main className="widget-stage">
+    <main className={`widget-stage is-${appearanceMode}`}>
       <section className="glass-widget" aria-label="透明待办挂件">
         <header className="widget-chrome">
           <div className="drag-zone" aria-hidden="true">
@@ -712,22 +741,13 @@ export default function App() {
           </div>
           <div className="window-actions">
             <button
-              className="chrome-button"
+              className={`chrome-button ${isPinned ? "is-active" : ""}`}
               type="button"
-              aria-label={isPinned ? "取消置顶" : "窗口置顶"}
-              title={isPinned ? "取消置顶" : "窗口置顶"}
+              aria-label={isPinned ? "取消置顶" : "临时置顶"}
+              title={isPinned ? "取消置顶" : "临时置顶"}
               onClick={togglePinned}
             >
               {isPinned ? <Pin size={14} /> : <PinOff size={14} />}
-            </button>
-            <button
-              className="chrome-button"
-              type="button"
-              aria-label="最小化"
-              title="最小化"
-              onClick={() => desktopApi?.minimizeWindow?.()}
-            >
-              <Minus size={15} />
             </button>
             <button
               className="chrome-button"
@@ -866,6 +886,14 @@ export default function App() {
               >
                 <Power size={16} />
                 {isAutoLaunchEnabled ? "自启已开" : "开机自启"}
+              </button>
+              <button
+                className={appearanceMode === "glass" ? "is-selected" : ""}
+                type="button"
+                onClick={toggleAppearanceMode}
+              >
+                <Layers size={16} />
+                {appearanceMode === "glass" ? "毛玻璃" : "透明"}
               </button>
               <button type="button" onClick={() => desktopApi?.tasks.openStorageFolder()}>
                 <FolderOpen size={16} />

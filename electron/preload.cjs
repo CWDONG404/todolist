@@ -15,11 +15,9 @@ contextBridge.exposeInMainWorld("desktop", {
       return () => ipcRenderer.removeListener("tasks:changed", listener);
     },
   },
-  openMainWindow: () => ipcRenderer.invoke("window:open-main"),
-  openMiniWindow: () => ipcRenderer.invoke("window:open-mini"),
-  minimizeWindow: () => ipcRenderer.invoke("window:minimize"),
   hideWindow: () => ipcRenderer.invoke("window:hide"),
   setMiniAlwaysOnTop: (enabled) => ipcRenderer.invoke("window:set-mini-always-on-top", enabled),
+  setAppearanceMaterial: (mode) => ipcRenderer.invoke("window:set-appearance-material", mode),
   getAutoLaunch: () => ipcRenderer.invoke("app:get-auto-launch"),
   setAutoLaunch: (enabled) => ipcRenderer.invoke("app:set-auto-launch", enabled),
 });

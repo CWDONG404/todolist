@@ -19,6 +19,8 @@ let isQuitting = false;
 
 const isDevServer = Boolean(process.env.VITE_DEV_SERVER_URL);
 const TRANSPARENT_WINDOW_BACKGROUND = "#00FFFFFF";
+const WINDOW_RADIUS = 26;
+const windowShapeTimers = new WeakMap();
 
 app.setName("Todolist");
 app.setPath("userData", path.join(app.getPath("appData"), "Todolist"));
@@ -74,6 +76,99 @@ function placeWindowTopRight(window) {
   window.setPosition(x + width - bounds.width - margin, y + margin, false);
 }
 
+function createRoundedWindowShape(width, height, radius) {
+  const safeWidth = Math.max(1, Math.round(width));
+  const safeHeight = Math.max(1, Math.round(height));
+  const safeRadius = Math.min(Math.max(0, Math.round(radius)), safeWidth / 2, safeHeight / 2);
+  const rects = [];
+  let previousRect = null;
+
+  for (let y = 0; y < safeHeight; y += 1) {
+    let inset = 0;
+
+    if (safeRadius > 0 && y < safeRadius) {
+      const distance = safeRadius - y - 0.5;
+      inset = Math.ceil(safeRadius - Math.sqrt(Math.max(0, safeRadius ** 2 - distance ** 2)));
+    } else if (safeRadius > 0 && y >= safeHeight - safeRadius) {
+      const distance = y - (safeHeight - safeRadius) + 0.5;
+      inset = Math.ceil(safeRadius - Math.sqrt(Math.max(0, safeRadius ** 2 - distance ** 2)));
+    }
+
+    const rect = {
+      x: inset,
+      y,
+      width: Math.max(1, safeWidth - inset * 2),
+      height: 1,
+    };
+
+    if (
+      previousRect &&
+      previousRect.x === rect.x &&
+      previousRect.width === rect.width &&
+      previousRect.y + previousRect.height === rect.y
+    ) {
+      previousRect.height += 1;
+      continue;
+    }
+
+    rects.push(rect);
+    previousRect = rect;
+  }
+
+  return rects;
+}
+
+function setTransparentBackings(window) {
+  if (!window || window.isDestroyed()) {
+    return;
+  }
+
+  window.setBackgroundColor(TRANSPARENT_WINDOW_BACKGROUND);
+
+  if (typeof window.webContents.setBackgroundColor === "function") {
+    window.webContents.setBackgroundColor(TRANSPARENT_WINDOW_BACKGROUND);
+  }
+}
+
+function applyWindowShape(window) {
+  if (process.platform !== "win32" || !window || window.isDestroyed()) {
+    return;
+  }
+
+  const [width, height] = window.getSize();
+  window.setShape(createRoundedWindowShape(width, height, WINDOW_RADIUS));
+}
+
+function scheduleWindowShape(window, delay = 80) {
+  if (process.platform !== "win32" || !window || window.isDestroyed()) {
+    return;
+  }
+
+  const existingTimer = windowShapeTimers.get(window);
+
+  if (existingTimer) {
+    clearTimeout(existingTimer);
+  }
+
+  const timer = setTimeout(() => {
+    windowShapeTimers.delete(window);
+    applyWindowShape(window);
+  }, delay);
+
+  windowShapeTimers.set(window, timer);
+}
+
+function clearWindowShapeTimer(window) {
+  const existingTimer = windowShapeTimers.get(window);
+
+  if (!existingTimer) {
+    return;
+  }
+
+  clearTimeout(existingTimer);
+  windowShapeTimers.delete(window);
+}
+
 function setWindowAppearance(window, mode) {
   const nextMode = mode === "clear" ? "clear" : "glass";
 
@@ -81,10 +176,11 @@ function setWindowAppearance(window, mode) {
     return nextMode;
   }
 
-  window.setBackgroundColor(TRANSPARENT_WINDOW_BACKGROUND);
+  setTransparentBackings(window);
 
   if (process.platform === "win32") {
     window.setBackgroundMaterial(nextMode === "glass" ? "acrylic" : "none");
+    scheduleWindowShape(window);
   }
 
   return nextMode;
@@ -120,17 +216,28 @@ function createWindow(mode = "widget") {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: false,
+      transparent: true,
     },
   });
 
-  window.setBackgroundColor(TRANSPARENT_WINDOW_BACKGROUND);
+  setTransparentBackings(window);
   window.loadURL(getAppUrl(mode));
 
+  window.webContents.once("did-finish-load", () => {
+    setTransparentBackings(window);
+    scheduleWindowShape(window);
+  });
+
   window.once("ready-to-show", () => {
-    window.setBackgroundColor(TRANSPARENT_WINDOW_BACKGROUND);
+    setTransparentBackings(window);
     placeWindowTopRight(window);
     window.showInactive();
     window.setAlwaysOnTop(false);
+    scheduleWindowShape(window, 160);
+  });
+
+  window.on("resize", () => {
+    scheduleWindowShape(window);
   });
 
   window.on("close", (event) => {
@@ -143,6 +250,7 @@ function createWindow(mode = "widget") {
   });
 
   window.on("closed", () => {
+    clearWindowShapeTimer(window);
     mainWindow = null;
   });
 

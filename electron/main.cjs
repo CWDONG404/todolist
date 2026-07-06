@@ -18,6 +18,7 @@ let taskStore = null;
 let isQuitting = false;
 
 const isDevServer = Boolean(process.env.VITE_DEV_SERVER_URL);
+const TRANSPARENT_WINDOW_BACKGROUND = "#00FFFFFF";
 
 app.setName("Todolist");
 app.setPath("userData", path.join(app.getPath("appData"), "Todolist"));
@@ -73,6 +74,22 @@ function placeWindowTopRight(window) {
   window.setPosition(x + width - bounds.width - margin, y + margin, false);
 }
 
+function setWindowAppearance(window, mode) {
+  const nextMode = mode === "clear" ? "clear" : "glass";
+
+  if (!window || window.isDestroyed()) {
+    return nextMode;
+  }
+
+  window.setBackgroundColor(TRANSPARENT_WINDOW_BACKGROUND);
+
+  if (process.platform === "win32") {
+    window.setBackgroundMaterial(nextMode === "glass" ? "acrylic" : "none");
+  }
+
+  return nextMode;
+}
+
 function createWindow(mode = "widget") {
   const existingWindow = mainWindow;
 
@@ -90,9 +107,9 @@ function createWindow(mode = "widget") {
     title: "Todolist",
     frame: false,
     transparent: true,
-    backgroundColor: "#00000000",
-    backgroundMaterial: "none",
+    backgroundColor: TRANSPARENT_WINDOW_BACKGROUND,
     hasShadow: false,
+    roundedCorners: true,
     resizable: true,
     alwaysOnTop: false,
     skipTaskbar: true,
@@ -106,9 +123,11 @@ function createWindow(mode = "widget") {
     },
   });
 
+  window.setBackgroundColor(TRANSPARENT_WINDOW_BACKGROUND);
   window.loadURL(getAppUrl(mode));
 
   window.once("ready-to-show", () => {
+    window.setBackgroundColor(TRANSPARENT_WINDOW_BACKGROUND);
     placeWindowTopRight(window);
     window.showInactive();
     window.setAlwaysOnTop(false);
@@ -205,6 +224,9 @@ function setupIpc() {
 
     return false;
   });
+  ipcMain.handle("window:set-appearance", (event, mode) =>
+    setWindowAppearance(BrowserWindow.fromWebContents(event.sender), mode),
+  );
   ipcMain.handle("app:get-auto-launch", () => getAutoLaunchEnabled());
   ipcMain.handle("app:set-auto-launch", (_event, enabled) => setAutoLaunchEnabled(enabled));
 }

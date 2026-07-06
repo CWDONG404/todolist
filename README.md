@@ -16,8 +16,21 @@ Todolist 是一个 Windows 桌面待办挂件。它基于 React、TypeScript、V
 
 ## 外观说明
 
-- 毛玻璃模式：使用透明 Electron 窗口 + CSS 毛玻璃面板实现，圆角由前端裁切，避免 Windows 原生 acrylic 在四角铺成矩形。
-- 透明模式：主挂件背景为透明，不再使用白色底板，尽量融入桌面壁纸；任务行和按钮保留轻微半透明浮层，保证可读性。
+- 毛玻璃模式：Electron 原生透明窗口保持透明底色，Windows native `acrylic` 材质负责背景模糊，前端只叠加半透明填充和控件。
+- 透明模式：关闭 native material，主挂件主体背景为真正透明，不再使用白色或深色底板；任务行和按钮保留轻微半透明浮层，保证可读性。
+- 圆角处理：窗口启用 Windows 原生 `roundedCorners`，同时 `html`、`body`、`#root` 和最外层容器保持透明，避免只裁内部 DOM 而露出原生黑色矩形底。
+
+## 渲染链路说明
+
+桌面版使用 Electron `BrowserWindow`。透明窗口的正确链路是：
+
+1. 原生窗口启用 `transparent: true`。
+2. 原生窗口背景使用透明白 `#00FFFFFF`，避免透明像素在合成时退回黑色 backing surface。
+3. 主进程通过 IPC 在“毛玻璃 / 透明”之间切换 Windows native material：毛玻璃为 `acrylic`，透明为 `none`。
+4. Renderer 的 `html`、`body`、`#root`、`.widget-stage` 全部保持透明。
+5. 主挂件主体不依赖 CSS `backdrop-filter` 来模拟桌面模糊，避免 Chromium 透明窗口在某些 Windows 合成路径下把透明区域渲染成黑色。
+
+如果后续再调整外观，优先检查 Electron 原生窗口配置，再检查 CSS；不要只靠 `border-radius`、`overflow: hidden` 或遮罩来处理四角问题。
 
 ## 本地运行
 

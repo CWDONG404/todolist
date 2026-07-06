@@ -15,6 +15,7 @@ contextBridge.exposeInMainWorld("desktop", {
   },
   hideWindow: () => ipcRenderer.invoke("window:hide"),
   setMiniAlwaysOnTop: (enabled) => ipcRenderer.invoke("window:set-mini-always-on-top", enabled),
+  setWindowAppearance: (mode) => ipcRenderer.invoke("window:set-appearance", mode),
   getAutoLaunch: () => ipcRenderer.invoke("app:get-auto-launch"),
   setAutoLaunch: (enabled) => ipcRenderer.invoke("app:set-auto-launch", enabled),
 });

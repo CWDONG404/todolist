@@ -83,6 +83,7 @@ type DesktopBridge = {
   };
   hideWindow?: () => Promise<void>;
   setMiniAlwaysOnTop?: (enabled: boolean) => Promise<boolean>;
+  setWindowAppearance?: (mode: AppearanceMode) => Promise<AppearanceMode>;
   getAutoLaunch?: () => Promise<boolean>;
   setAutoLaunch?: (enabled: boolean) => Promise<boolean>;
 };
@@ -439,7 +440,10 @@ export default function App() {
       // Style preference is non-critical; ignore unavailable localStorage.
     }
 
-  }, [appearanceMode]);
+    desktopApi?.setWindowAppearance?.(appearanceMode).catch((error: unknown) => {
+      setStorageNotice(error instanceof Error ? error.message : "无法切换窗口外观。");
+    });
+  }, [appearanceMode, desktopApi]);
 
   useEffect(() => {
     if (!isStorageReady) {
